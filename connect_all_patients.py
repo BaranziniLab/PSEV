@@ -5,7 +5,7 @@ Usage:
 
 Options:
   -h --help     Show this screen.
-  -i=NAME     Input directory [default: build_4/].
+  -i=NAME     Input directory [default: build/].
   -s=NAME     SPOKE directory [default: spoke_v_1/].
   -o=NAME     Output filename [default: all_patient_cohort].
 """
@@ -28,60 +28,41 @@ save_filename = arguments['-o']
 node_list = np.load(spoke_directory+'spoke_node_list.npy', allow_pickle=False)
 node_type_list = np.load(spoke_directory+'node_type_list.npy', allow_pickle=False)
 #
-doid_to_icd_filename = 'direct_doid_to_icd_9_10_group_filled_in_final_used_for_query.tsv'
+doid_to_icd_filename = 'SPOKE_Disease_to_UCSF_EHR.tsv'
 icd_9_cui_filename = 'ehr_cui_icd9.tsv'
 icd_10_cui_filename = 'ehr_cui_icd10.tsv'
 symptom_cui_and_mesh_filename = 'symptom_cui_and_mesh.tsv'
-db_id_to_clarity_file = 'db_id_to_clarity.pkl'
+db_id_to_clarity_file = 'SPOKE_Compound_to_UCSF_EHR.tsv'
 loinc_filename='distinct_cui_loinc.tsv'
 path_filename='cui_to_loinc_path.tsv'
 cui_cpt_filename='distinct_cui_cpt.tsv'
 #
 patient_filename = directory+'patient_cohort.tsv'
-diagnoses_table_filename = directory+'distinct_patient_icd_9_10_by_year.tsv'
-medication_table_filename = directory+'distinct_patient_meds_by_year.tsv'
-lab_table_filename = directory+'distinct_patient_lab_by_year.tsv'
-
-def get_icd_to_hetio_disease(filename):
-	disease_query_table = []
-	with open(directory+'constants/'+filename, 'rU') as doid_file:
-		header = doid_file.readline()
-		for lines in doid_file:
-			doid, disease_name, icd_9_list, icd_10_list = lines.strip('\n').split('\t')
-			for icd in icd_9_list.split()+icd_10_list.split():
-				disease_query_table.append([doid, icd])
-	disease_query_table = pd.DataFrame(data=np.array(disease_query_table), columns=['SPOKE', 'EHR'])
-	return disease_query_table
+diagnoses_table_filename = directory+'EHR_DIAGNOSIS.tsv'
+medication_table_filename = directory+'EHR_MEDICATION.tsv'
+lab_table_filename = directory+'EHR_LABS.tsv'
 
 def get_icd_cui_mesh_tables():
-	disease_query_table = get_icd_to_hetio_disease(doid_to_icd_filename)
-	icd9_table = pd.read_table(directory+'constants/'+icd_9_cui_filename, sep='\t', header=0)
-	icd10_table = pd.read_table(directory+'constants/'+icd_10_cui_filename, sep='\t', header=0)
-	mesh_table = pd.read_table(directory+'constants/'+symptom_cui_and_mesh_filename, sep='\t', header=0)
+	disease_query_table = pd.read_table('constants/'+doid_to_icd_filename, sep='\t', header=0, dtype=str, index_col=0)
+	icd9_table = pd.read_table('constants/'+icd_9_cui_filename, sep='\t', header=0)
+	icd10_table = pd.read_table('constants/'+icd_10_cui_filename, sep='\t', header=0)
+	mesh_table = pd.read_table('constants/'+symptom_cui_and_mesh_filename, sep='\t', header=0)
 	cui_icd_table = pd.concat((icd9_table, icd10_table), ignore_index=True).rename(index=str, columns={"CODE": "EHR", "CUI":"SPOKE"}).drop_duplicates()
 	mesh_cui_icd_table = pd.merge(mesh_table, cui_icd_table, left_on='CUI', right_on='SPOKE').drop(['CUI', 'SPOKE'], axis=1).rename(index=str, columns={"CODE":"SPOKE"}).drop_duplicates()
 	icd_to_spoke = pd.concat((disease_query_table, cui_icd_table, mesh_cui_icd_table), ignore_index=True)
 	icd_to_spoke = icd_to_spoke[icd_to_spoke['SPOKE'].isin(np.array(node_list, dtype=str))]
 	return icd_to_spoke
 
-def get_clarity_to_dbid(db_to_clarity_id_dict):
-	clarity_to_spoke = []
-	for dbid, clarity_list in db_to_clarity_id_dict.items():
-		for clarity_id in clarity_list:
-			clarity_to_spoke.append([dbid, clarity_id])
-	clarity_to_spoke = pd.DataFrame(data=np.array(clarity_to_spoke), columns=['SPOKE', 'EHR'])
-	clarity_to_spoke['EHR'] = np.array(clarity_to_spoke['EHR'], dtype=str)
-	return clarity_to_spoke
-
 def get_loinc_map_stats(path_df):
 	id_and_type = path_df.drop(['EHR'], axis=1).drop_duplicates()
 	print '# of LOINC mapped to SPOKE:', path_df.EHR.unique().shape[0]
-	print 'Mapped SPOKE breakdown:', Counter(id_and_type.Node_Type.values)
+	print 'Mapped SPOKE breakdown from LABS:', Counter(id_and_type.Node_Type.values)
 
-def filter_transform_labs_to_spoke(path_df, path_len_filter=2):
+def filter_transform_labs_to_spoke(path_len_filter=2):
+	path_df = pd.read_table('constants/'+path_filename, sep='\t', header=0)
 	cui_to_all_spoke = pd.read_table(spoke_directory+'All_SPOKE_CUI.tsv', sep='\t', header=0)
-	cui_cpt_df = pd.read_table(directory+'constants/'+cui_cpt_filename, sep='\t', header=0)
-	cui_loinc_df = pd.read_table(directory+'constants/'+loinc_filename, sep='\t', header=0)
+	cui_cpt_df = pd.read_table('constants/'+cui_cpt_filename, sep='\t', header=0)
+	cui_loinc_df = pd.read_table('constants/'+loinc_filename, sep='\t', header=0)
 	path_len_list, first_list, second_list = [], [], []
 	for cui, path in path_df.values:
 		path_list = path.split('->')
@@ -115,19 +96,16 @@ def get_patient_to_spoke_df(icd_to_spoke, clarity_to_spoke, path_df):
 	return pd.concat((patient_diag_ehr, patient_med_ehr, patient_lab_ehr), ignore_index=True)
 
 def print_binary_matrix(patient_to_hetio_connect):
-	# print patient matrix 
 	output = open(directory+save_filename+'_binary_direct_hit_matrix', 'w')
 	for row in patient_to_hetio_connect:
 		output.write(' '.join(np.array(row, dtype=str))+'\n')
 	output.close()
 
-
 patient_list = np.array(pd.read_table(patient_filename, sep='\t', header=0)['Patient_ID'].values, dtype=str)
 icd_to_spoke = get_icd_cui_mesh_tables()
-clarity_to_spoke= get_clarity_to_dbid(pic.load(open('db_id_to_clarity.pkl', 'r')))
+clarity_to_spoke = pd.read_table('constants/'+db_id_to_clarity_file, sep='\t', header=0, dtype=str, index_col=0)
 #
-path_df = pd.read_table(directory+'constants/'+path_filename, sep='\t', header=0)
-path_df = filter_transform_labs_to_spoke(path_df, path_len_filter=2)
+path_df = filter_transform_labs_to_spoke(path_len_filter=2)
 #
 patient_to_spoke = get_patient_to_spoke_df(icd_to_spoke, clarity_to_spoke, path_df)
 patient_to_spoke['Patient_ID'] = np.array(patient_to_spoke['Patient_ID'].values, dtype=str)

@@ -1,17 +1,20 @@
 """This program creates the Propagated SPOKE Entry Vectors
 Usage:
-  make_psevs_by_node_type.py [-a=N] [-b=N] [-t=NAME] [-i=NAME] [-d=NAME] [-n=NAME] [-m=NAME] [-s=NAME]
+  make_psevs_by_node_type.py [-a=N] [-b=N] [-w=N] [-t=NAME] [-i=NAME] [-d=NAME] [-n=NAME] [-m=NAME] [-p=NAME] [-e=NAME] [-s=NAME]
   make_psevs_by_node_type.py -h | --help
 
 Options:
   -h --help     Show this screen.
   -a=N     Acceptable difference threshold [default: 0.001].
   -b=N     Probability of Random Jump [default: 0.1].
-  -t=NAME     SPOKE node type [default: Disease].
-  -i=NAME     Input directory [default: build_3/].
+  -w=N     Number of workers for parallel processing [default: 6].
+  -t=NAME     SPOKE node type [default: Gene].
+  -i=NAME     Input directory [default: build/].
   -d=NAME     Filename containing direct hit list [default: all_patient_cohort_direct_hit_list.npy].
   -n=NAME     Filename containing SPOKE node list [default: all_patient_cohort_spoke_node_list.npy].
   -m=NAME     Filename containing patient direct hit matrix [default: all_patient_cohort_binary_direct_hit_matrix].
+  -p=NAME     Filename transition probability matrix [default: transition_probability_matrix.npy].
+  -e=NAME     Filename spoke edges [default: neo4j_edges.tsv].
   -s=NAME     SPOKE directory [default: spoke_v_1/].
 """
 from docopt import docopt
@@ -28,9 +31,12 @@ arguments = docopt(__doc__)
 # Load input arguments
 acceptable_diff=float(arguments['-a'])
 probability_random_jump=float(arguments['-b'])
+num_workers=int(arguments['-w'])
 direct_hit_list_filename = arguments['-d']
 node_list_filename = arguments['-n']
 patient_matrix_filename = arguments['-m']
+transition_prob_matrix_filename = arguments['-p']
+spoke_edge_filename = arguments['-e']
 input_directory = arguments['-i']
 spoke_node_type = arguments['-t']
 spoke_directory = arguments['-s']
@@ -60,7 +66,7 @@ def load_neo4j_connect_matrix(node_to_index_dict):
 	If there is an edge between two SPOKE nodes then the cell will be 1 else 0
 	'''
 	connectivity_matrix = np.zeros((number_nodes, number_nodes))
-	with open(spoke_directory+'neo4j_edges.tsv') as edge_file:
+	with open(spoke_directory+spoke_edge_filename) as edge_file:
 		for lines in edge_file:
 			node_1, relationship, node_2 = lines.strip('\n').split('\t')
 			connectivity_matrix[node_to_index_dict[node_1]][node_to_index_dict[node_2]] = 1
@@ -81,7 +87,13 @@ def make_all_direct_hit_arrays():
 	return matrix
 
 # Make transition probability matrix
-direct_hit_array_list = make_all_direct_hit_arrays()
+direct_hit_array_list = np.zeros((2,2))
+if os.path.exists(input_directory+transition_prob_matrix_filename):
+	direct_hit_array_list = np.load(input_directory+transition_prob_matrix_filename, allow_pickle=False)
+else:
+	direct_hit_array_list = make_all_direct_hit_arrays()
+	np.save(input_directory+transition_prob_matrix_filename, direct_hit_array_list, allow_pickle=False)
+
 
 # Find index for desired direct hits
 desired_direct_hit_index = direct_hit_node_type_list == spoke_node_type
@@ -113,7 +125,6 @@ def get_rank_vector(index_and_probability_random_jump):
 	return rank_vector/np.sum(rank_vector)
 
 def make_all_direct_hit_page_rank_parallel(probability_random_jump):
-	num_workers = 6
 	p = mp.Pool(num_workers)
 	index_and_probability_random_jump = zip(range(number_direct_hits), np.full(number_direct_hits, probability_random_jump))
 	rank_vector_list_of_lists = np.array(p.map(get_rank_vector, index_and_probability_random_jump))
@@ -125,7 +136,4 @@ def make_all_direct_hit_page_rank_parallel(probability_random_jump):
 rank_vector_list_of_lists = make_all_direct_hit_page_rank_parallel(probability_random_jump)
 filename = spoke_node_type+'_direct_hit_page_rank_E_' + '_'.join(str(probability_random_jump).split('.')) + '_A_' + '_'.join(str(acceptable_diff).split('.'))
 np.save(input_directory+filename, rank_vector_list_of_lists, allow_pickle=False)
-
-
-
 
