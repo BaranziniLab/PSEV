@@ -43,5 +43,6 @@ python make_psevs_by_node_type.py
 ###### stdout (using default settings):
 >make_psevs_by_node_type.py:83: RuntimeWarning: invalid value encountered in divide
 >  add_val = np.nan_to_num(direct_hit.astype(float)/np.sum(direct_hit))
+>
 >make_psevs_by_node_type.py:111: RuntimeWarning: invalid value encountered in divide
 >  connectivity_matrix = np.transpose(np.nan_to_num(connectivity_matrix/np.sum(connectivity_matrix, axis=0)))
