@@ -4,7 +4,7 @@ The data provided here is not the same as that used in the paper.
 Patient IDs have been scrambled.
 This is only a fraction of the patient data used.
 
-## Clone repository
+###### Clone repository
 git clone https://github.com/baranzini-lab/PSEV.git
 ###### Go to constants directory
 cd PSEV/constants/
